@@ -6,7 +6,7 @@ Real-time face mask detection using OpenCV, TensorFlow, and MobileNetV2
 
 The entire project, including training files, datasets, and large model files, is available on Google Drive:
 
-[Download Full Project Folder from Google Drive](https://drive.google.com/drive/folders/1ZkqqQ1Ylm4RJ20Lz502_SyUJIVGQ-hl?usp=drive_link)
+[Download Full Project Folder from Google Drive](https://drive.google.com/drive/folders/1ZkqqQ1Ylm4RJ20Lz5O2s_SyUJIVGQ-hl?usp=drive_link)
 
 ### After downloading, follow these instructions:
 1. Unzip/extract the folder on your computer (if zipped).
