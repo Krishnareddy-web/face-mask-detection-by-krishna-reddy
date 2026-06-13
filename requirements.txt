@@ -1,9 +1,7 @@
 opencv-python-headless
 tensorflow-cpu
-keras
 numpy
 pillow
-tk
 Flask
 Werkzeug
 gunicorn
