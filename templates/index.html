@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Mask Detection | Live Demo</title>
+    <!-- Use Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-container">
+        <header class="app-header">
+            <h1>Face Mask <span class="gradient-text">Detector</span></h1>
+            <p>Upload an image to see the deep learning model in action.</p>
+        </header>
+
+        <main class="app-main">
+            <div class="upload-card">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="drop-zone" id="dropZone">
+                        <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" class="upload-icon" height="48" width="48" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <p class="drop-text">Drag & drop your image here</p>
+                        <p class="sub-text">or</p>
+                        <label for="fileInput" class="btn-primary">
+                            Browse Files
+                        </label>
+                        <input type="file" id="fileInput" name="file" accept=".png, .jpg, .jpeg" hidden>
+                    </div>
+                </form>
+
+                <div id="loading" class="hidden">
+                    <div class="spinner"></div>
+                    <p>Running Inference...</p>
+                </div>
+
+                <div id="resultContainer" class="hidden result-card">
+                    <h2>Analysis Complete</h2>
+                    <div class="image-wrapper">
+                        <img id="resultImage" src="" alt="Result Image">
+                    </div>
+                    <button id="resetBtn" class="btn-secondary">Try Another Image</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const uploadForm = document.getElementById('uploadForm');
+        const loading = document.getElementById('loading');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultImage = document.getElementById('resultImage');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // Handle file selection
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files.length > 0) {
+                processImage(e.target.files[0]);
+            }
+        });
+
+        // Handle drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if(e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                processImage(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Reset
+        resetBtn.addEventListener('click', () => {
+            resultContainer.classList.add('hidden');
+            uploadForm.style.display = 'block';
+            fileInput.value = '';
+        });
+
+        async function processImage(file) {
+            // Hide form, show loading
+            uploadForm.style.display = 'none';
+            loading.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    resetBtn.click();
+                } else if (data.success) {
+                    // Update image and show result
+                    resultImage.src = data.result_url + '?t=' + new Date().getTime(); // Prevent caching
+                    loading.classList.add('hidden');
+                    resultContainer.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Something went wrong. Please try again.');
+                resetBtn.click();
+            }
+        }
+    </script>
+</body>
+</html>
