@@ -3,6 +3,8 @@ from flask import Flask, render_template, request, jsonify, url_for
 from werkzeug.utils import secure_filename
 import cv2
 from detector import detect_and_predict_mask
+import base64
+import numpy as np
 
 app = Flask(__name__)
 
@@ -73,6 +75,53 @@ def predict():
         return jsonify({'success': True, 'result_url': result_url})
 
     return jsonify({'error': 'Invalid file type'})
+
+@app.route('/predict_live', methods=['POST'])
+def predict_live():
+    data = request.json
+    if not data or 'image' not in data:
+        return jsonify({'error': 'No image data'})
+    
+    # Extract base64 image data
+    image_data = data['image'].split(',')[1]
+    
+    # Decode image
+    nparr = np.frombuffer(base64.b64decode(image_data), np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    if image is None:
+        return jsonify({'error': 'Invalid image'})
+        
+    # Detect masks
+    boxes, preds = detect_and_predict_mask(image)
+    
+    results = []
+    for (box, pred) in zip(boxes, preds):
+        x, y, w, h = box
+        mask_prob, no_mask_prob = pred
+        
+        # Convert types to standard Python int/float for JSON serialization
+        x, y, w, h = int(x), int(y), int(w), int(h)
+        mask_prob, no_mask_prob = float(mask_prob), float(no_mask_prob)
+        
+        if mask_prob > 0.99:
+            color = "#00FF00"
+            label = "Mask"
+        elif mask_prob < 0.5:
+            color = "#FF0000"
+            label = "No Mask"
+        else:
+            color = "#FFFF00"
+            label = "Uncertain"
+            
+        results.append({
+            "box": [x, y, w, h],
+            "label": label,
+            "probability": max(mask_prob, no_mask_prob) * 100,
+            "color": color
+        })
+        
+    return jsonify({'success': True, 'predictions': results})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

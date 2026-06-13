@@ -21,11 +21,16 @@
     <div class="app-container">
         <header class="app-header">
             <h1>Face Mask <span class="gradient-text">Detector</span></h1>
-            <p>Upload an image to see the deep learning model in action.</p>
+            <p>Upload an image or use your webcam to see the deep learning model in action.</p>
+            <div class="mode-toggle">
+                <button id="modeUploadBtn" class="toggle-btn active">Image Upload</button>
+                <button id="modeLiveBtn" class="toggle-btn">Live Camera</button>
+            </div>
         </header>
 
         <main class="app-main">
-            <div class="upload-card">
+            <!-- Upload Mode Section -->
+            <div id="uploadModeSection" class="upload-card">
                 <form id="uploadForm" enctype="multipart/form-data">
                     <div class="drop-zone" id="dropZone">
                         <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" class="upload-icon" height="48" width="48" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -51,10 +56,46 @@
                     <button id="resetBtn" class="btn-secondary">Try Another Image</button>
                 </div>
             </div>
+
+            <!-- Live Camera Mode Section -->
+            <div id="liveModeSection" class="upload-card hidden">
+                <div class="video-container">
+                    <video id="webcamVideo" autoplay playsinline></video>
+                    <canvas id="webcamCanvas"></canvas>
+                </div>
+                <div class="camera-controls">
+                    <button id="startCameraBtn" class="btn-primary">Start Camera</button>
+                    <button id="stopCameraBtn" class="btn-secondary hidden">Stop Camera</button>
+                </div>
+                <p id="cameraStatus" class="sub-text mt-20">Click start to enable your webcam.</p>
+            </div>
         </main>
     </div>
 
     <script>
+        // UI Elements
+        const modeUploadBtn = document.getElementById('modeUploadBtn');
+        const modeLiveBtn = document.getElementById('modeLiveBtn');
+        const uploadModeSection = document.getElementById('uploadModeSection');
+        const liveModeSection = document.getElementById('liveModeSection');
+
+        // Mode Switching
+        modeUploadBtn.addEventListener('click', () => {
+            modeUploadBtn.classList.add('active');
+            modeLiveBtn.classList.remove('active');
+            uploadModeSection.classList.remove('hidden');
+            liveModeSection.classList.add('hidden');
+            stopCamera();
+        });
+
+        modeLiveBtn.addEventListener('click', () => {
+            modeLiveBtn.classList.add('active');
+            modeUploadBtn.classList.remove('active');
+            liveModeSection.classList.remove('hidden');
+            uploadModeSection.classList.add('hidden');
+        });
+
+        // --- UPLOAD MODE LOGIC ---
         const fileInput = document.getElementById('fileInput');
         const dropZone = document.getElementById('dropZone');
         const uploadForm = document.getElementById('uploadForm');
@@ -63,23 +104,12 @@
         const resultImage = document.getElementById('resultImage');
         const resetBtn = document.getElementById('resetBtn');
 
-        // Handle file selection
         fileInput.addEventListener('change', (e) => {
-            if(e.target.files.length > 0) {
-                processImage(e.target.files[0]);
-            }
+            if(e.target.files.length > 0) processImage(e.target.files[0]);
         });
 
-        // Handle drag and drop
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
@@ -89,7 +119,6 @@
             }
         });
 
-        // Reset
         resetBtn.addEventListener('click', () => {
             resultContainer.classList.add('hidden');
             uploadForm.style.display = 'block';
@@ -97,34 +126,132 @@
         });
 
         async function processImage(file) {
-            // Hide form, show loading
             uploadForm.style.display = 'none';
             loading.classList.remove('hidden');
-
             const formData = new FormData();
             formData.append('file', file);
 
             try {
-                const response = await fetch('/predict', {
-                    method: 'POST',
-                    body: formData
-                });
-                
+                const response = await fetch('/predict', { method: 'POST', body: formData });
                 const data = await response.json();
                 
                 if (data.error) {
                     alert('Error: ' + data.error);
                     resetBtn.click();
                 } else if (data.success) {
-                    // Update image and show result
-                    resultImage.src = data.result_url + '?t=' + new Date().getTime(); // Prevent caching
+                    resultImage.src = data.result_url + '?t=' + new Date().getTime();
                     loading.classList.add('hidden');
                     resultContainer.classList.remove('hidden');
                 }
             } catch (err) {
-                console.error(err);
                 alert('Something went wrong. Please try again.');
                 resetBtn.click();
+            }
+        }
+
+        // --- LIVE CAMERA LOGIC ---
+        const video = document.getElementById('webcamVideo');
+        const canvas = document.getElementById('webcamCanvas');
+        const ctx = canvas.getContext('2d');
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const stopCameraBtn = document.getElementById('stopCameraBtn');
+        const cameraStatus = document.getElementById('cameraStatus');
+        
+        let stream = null;
+        let inferenceInterval = null;
+        let isInferencing = false;
+
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                cameraStatus.innerText = "Requesting camera permission...";
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    startCameraBtn.classList.add('hidden');
+                    stopCameraBtn.classList.remove('hidden');
+                    cameraStatus.innerText = "Camera active. Running inference...";
+                    
+                    // Start processing frames every 600ms
+                    inferenceInterval = setInterval(processVideoFrame, 600);
+                };
+            } catch (err) {
+                console.error(err);
+                cameraStatus.innerText = "Error accessing camera. Please ensure permissions are granted.";
+            }
+        });
+
+        stopCameraBtn.addEventListener('click', stopCamera);
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            if (inferenceInterval) {
+                clearInterval(inferenceInterval);
+                inferenceInterval = null;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // clear overlay
+            startCameraBtn.classList.remove('hidden');
+            stopCameraBtn.classList.add('hidden');
+            cameraStatus.innerText = "Camera stopped.";
+        }
+
+        async function processVideoFrame() {
+            if (isInferencing || !stream) return; // Prevent overlapping requests
+            isInferencing = true;
+
+            // Draw current video frame to a hidden canvas to get base64
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+            
+            const imageData = tempCanvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                const response = await fetch('/predict_live', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageData })
+                });
+                
+                const data = await response.json();
+                
+                // Clear previous drawings
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (data.success && data.predictions) {
+                    data.predictions.forEach(pred => {
+                        const [x, y, w, h] = pred.box;
+                        
+                        // Draw box
+                        ctx.beginPath();
+                        ctx.rect(x, y, w, h);
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = pred.color;
+                        ctx.stroke();
+                        
+                        // Draw label background
+                        ctx.fillStyle = pred.color;
+                        const text = `${pred.label}: ${pred.probability.toFixed(1)}%`;
+                        const textWidth = ctx.measureText(text).width;
+                        ctx.fillRect(x, y - 25, textWidth + 10, 25);
+                        
+                        // Draw text
+                        ctx.fillStyle = "#000000";
+                        ctx.font = "16px Inter";
+                        ctx.fillText(text, x + 5, y - 7);
+                    });
+                }
+            } catch (err) {
+                console.error("Inference error:", err);
+            } finally {
+                isInferencing = false;
             }
         }
     </script>
